@@ -10,7 +10,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Vanguard AI Platform — Audit-Grade Bank Statement Analytics",
-  description: "Institutional bank statement analytics, 100% client-side machine learning, and audit-grade balance verification.",
+  description:
+    "Institutional bank statement analytics, 100% client-side machine learning, and audit-grade balance verification.",
 };
 
 export default function RootLayout({
@@ -20,9 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-white text-gray-900 antialiased selection:bg-black selection:text-white`}>
-        {children}
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

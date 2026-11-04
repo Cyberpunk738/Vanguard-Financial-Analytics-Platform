@@ -1,3 +1,10 @@
+import {
+  detectColumns,
+  parseStatementNumber,
+  isStatementDateValid,
+  smartParseDate,
+} from "./statement-fields";
+
 /**
  * Production-Grade Financial Data Validation Engine
  * 100% Deterministic pre-analysis data hygiene audit.
@@ -37,7 +44,7 @@ export interface ValidatedStatementData {
 }
 
 export function validateStatementData(
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
 ): ValidatedStatementData {
   if (!rows || rows.length === 0) {
     return {
@@ -57,6 +64,16 @@ export function validateStatementData(
     };
   }
 
+  const cols = detectColumns(rows);
+  const read = (row: Record<string, unknown>, key: string | null) =>
+    key ? row[key] : undefined;
+  const getNum = parseStatementNumber;
+  const signedAmount = (row: Record<string, unknown>) => {
+    const credit = getNum(read(row, cols.creditCol));
+    const debit = getNum(read(row, cols.debitCol));
+    const amount = getNum(read(row, cols.amountCol));
+    return credit > 0 ? credit : debit > 0 ? -debit : amount;
+  };
   const flaggedRows: FlaggedRow[] = [];
   const cleanRows: Record<string, unknown>[] = [];
   const seenTxSignatures = new Map<string, number>();
@@ -71,8 +88,8 @@ export function validateStatementData(
     let isRowValid = true;
 
     // 1. Date Validation
-    const dateVal = r.Date ?? r.date ?? r.Sleep_Day ?? r.txn_date ?? r.TransactionDate ?? r.BookingDate;
-    if (!dateVal || dateVal === "" || dateVal === "Invalid Date") {
+    const dateVal = read(r, cols.dateCol);
+    if (!isStatementDateValid(dateVal)) {
       invalidDateCount++;
       isRowValid = false;
       flaggedRows.push({
@@ -85,15 +102,9 @@ export function validateStatementData(
     }
 
     // 2. Numeric Sanity (Debit / Credit / Amount)
-    const getNum = (val: unknown): number => {
-      if (val === null || val === undefined || val === "" || val === "-") return NaN;
-      const cleaned = String(val).replace(/[,\s]/g, "").replace(/[()]/g, "");
-      return Number(cleaned);
-    };
-
-    const amt = getNum(r.Amount ?? r.amount);
-    const debit = getNum(r.Debit ?? r.debit);
-    const credit = getNum(r.Credit ?? r.credit);
+    const amt = getNum(read(r, cols.amountCol));
+    const debit = getNum(read(r, cols.debitCol));
+    const credit = getNum(read(r, cols.creditCol));
 
     if (isNaN(amt) && isNaN(debit) && isNaN(credit)) {
       impossibleValueCount++;
@@ -120,9 +131,24 @@ export function validateStatementData(
     }
 
     // 3. Duplicate Transaction Detection (Date + Payee + Amount + Type)
-    const descStr = String(r.Description ?? r.description ?? r.Payee ?? r.Vendor ?? "").trim().toLowerCase();
-    const sigAmt = !isNaN(credit) && credit > 0 ? credit : !isNaN(debit) && debit > 0 ? debit : amt;
-    const txSig = `${dateVal}_${descStr}_${sigAmt}`;
+    const descStr = String(read(r, cols.descCol) ?? "")
+      .trim()
+      .toLowerCase();
+    const sigAmt =
+      !isNaN(credit) && credit > 0
+        ? credit
+        : !isNaN(debit) && debit > 0
+          ? debit
+          : amt;
+    const direction =
+      credit > 0
+        ? "credit"
+        : debit > 0
+          ? "debit"
+          : amt < 0
+            ? "debit"
+            : "credit";
+    const txSig = `${dateVal}_${descStr}_${Math.abs(sigAmt)}_${direction}`;
 
     if (seenTxSignatures.has(txSig)) {
       duplicateRowCount++;
@@ -138,15 +164,20 @@ export function validateStatementData(
     }
 
     // 4. Sequential Balance Verification (if Balance column is present)
-    const balance = getNum(r.Balance ?? r.balance ?? r.RunningBalance);
+    const balance = getNum(read(r, cols.balanceCol));
     if (idx > 0 && !isNaN(balance)) {
       const prevRow = rows[idx - 1];
-      const prevBal = getNum(prevRow.Balance ?? prevRow.balance ?? prevRow.RunningBalance);
+      const prevBal = getNum(read(prevRow, cols.balanceCol));
       if (!isNaN(prevBal)) {
-        let expectedBal = prevBal;
-        if (!isNaN(credit) && credit > 0) expectedBal += credit;
-        else if (!isNaN(debit) && debit > 0) expectedBal -= debit;
-        else if (!isNaN(amt)) expectedBal += amt;
+        const previousDate = read(prevRow, cols.dateCol);
+        const descending =
+          isStatementDateValid(previousDate) &&
+          isStatementDateValid(dateVal) &&
+          smartParseDate(String(previousDate)) >
+            smartParseDate(String(dateVal));
+        const expectedBal = descending
+          ? prevBal - signedAmount(prevRow)
+          : prevBal + signedAmount(r);
 
         // Allow 0.05 rounding tolerance
         if (Math.abs(balance - expectedBal) > 0.05) {
@@ -169,12 +200,20 @@ export function validateStatementData(
 
   // 5. Data Quality Score Calculation
   const totalRows = rows.length;
-  const criticalCount = flaggedRows.filter((f) => f.severity === "critical").length;
-  const warningCount = flaggedRows.filter((f) => f.severity === "warning").length;
+  const criticalCount = flaggedRows.filter(
+    (f) => f.severity === "critical",
+  ).length;
+  const warningCount = flaggedRows.filter(
+    (f) => f.severity === "warning",
+  ).length;
 
   // Deduct 5 points per critical error, 1 point per warning error
-  const penalty = (criticalCount * 5 + warningCount * 1) / Math.max(1, totalRows / 20);
-  const dataQualityScore = Math.max(0, Math.min(100, Math.round(100 - penalty)));
+  const penalty =
+    (criticalCount * 5 + warningCount * 1) / Math.max(1, totalRows / 20);
+  const dataQualityScore = Math.max(
+    0,
+    Math.min(100, Math.round(100 - penalty)),
+  );
 
   let qualityGrade: "A+" | "A" | "B" | "C" | "F" = "A+";
   if (dataQualityScore >= 95) qualityGrade = "A+";
@@ -184,11 +223,11 @@ export function validateStatementData(
   else qualityGrade = "F";
 
   return {
-    cleanRows: cleanRows.length > 0 ? cleanRows : rows, // fallback to raw rows if all flagged
+    cleanRows, // Invalid-only statements must not silently re-enter analytics.
     report: {
       totalRows,
       validRowCount: cleanRows.length,
-      flaggedRowCount: flaggedRows.length,
+      flaggedRowCount: new Set(flaggedRows.map((row) => row.rowIndex)).size,
       duplicateRowCount,
       balanceMathDiscrepancies,
       invalidDateCount,
