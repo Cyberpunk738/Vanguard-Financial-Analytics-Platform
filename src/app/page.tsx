@@ -17,7 +17,15 @@ export default function Home() {
   };
 
   if (dataset) {
-    return <FintechDashboard onReturnHome={handleReturnHome} />;
+    return (
+      <FintechDashboard
+        onReturnHome={handleReturnHome}
+        onUploadNew={() => {
+          clearDataset();
+          setShowUploadModal(true);
+        }}
+      />
+    );
   }
 
   if (showUploadModal) {

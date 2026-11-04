@@ -23,14 +23,14 @@ interface DashboardState {
   categoryOverrides: Record<string, TransactionCategory>;
 
   toggleExcludeTransfers: () => void;
-  setCategoryOverride: (targetKey: string, category: TransactionCategory) => void;
+  setCategoryOverride: (
+    targetKey: string,
+    category: TransactionCategory,
+  ) => void;
   clearCategoryOverrides: () => void;
 
   setConfig: (config: DashboardConfig) => void;
-  addWidget: (
-    type: WidgetType,
-    partial?: Partial<WidgetConfig>
-  ) => string;
+  addWidget: (type: WidgetType, partial?: Partial<WidgetConfig>) => string;
   updateWidget: (id: string, patch: Partial<WidgetConfig>) => void;
   removeWidget: (id: string) => void;
   duplicateWidget: (id: string) => void;
@@ -51,10 +51,7 @@ function deepClone<T>(obj: T): T {
   }
 }
 
-function pushHistory(
-  state: DashboardState,
-  config: DashboardConfig
-) {
+function pushHistory(state: DashboardState, config: DashboardConfig) {
   state.history = state.history.slice(0, state.historyIndex + 1);
   state.history.push(deepClone(config));
   if (state.history.length > MAX_HISTORY) {
@@ -104,7 +101,8 @@ export const useDashboardStore = create<DashboardState>()(
           title: `New ${type} chart`,
           layout: { x: 0, y: 0, w: 4, h: 3 },
           data: { mappings: { values: [] } },
-          visualization: type === "kpi" ? {} : type === "bar" ? { variant: "grouped" } : {},
+          visualization:
+            type === "kpi" ? {} : type === "bar" ? { variant: "grouped" } : {},
           ...partial,
         } as WidgetConfig;
 
@@ -120,11 +118,12 @@ export const useDashboardStore = create<DashboardState>()(
       updateWidget: (id, patch) =>
         set((state) => {
           if (!state.config) return;
-          const idx = state.config.widgets.findIndex(
-            (w) => w.id === id
-          );
+          const idx = state.config.widgets.findIndex((w) => w.id === id);
           if (idx === -1) return;
-          state.config.widgets[idx] = { ...state.config.widgets[idx], ...patch };
+          state.config.widgets[idx] = {
+            ...state.config.widgets[idx],
+            ...patch,
+          };
           pushHistory(state, state.config);
         }),
 
@@ -132,7 +131,7 @@ export const useDashboardStore = create<DashboardState>()(
         set((state) => {
           if (!state.config) return;
           state.config.widgets = state.config.widgets.filter(
-            (w) => w.id !== id
+            (w) => w.id !== id,
           );
           if (state.activeWidgetId === id) {
             state.activeWidgetId = null;
@@ -162,9 +161,7 @@ export const useDashboardStore = create<DashboardState>()(
         set((state) => {
           if (!state.config) return;
           for (const layout of layouts) {
-            const widget = state.config.widgets.find(
-              (w) => w.id === layout.i
-            );
+            const widget = state.config.widgets.find((w) => w.id === layout.i);
             if (widget) {
               widget.layout = {
                 x: layout.x,
@@ -185,23 +182,21 @@ export const useDashboardStore = create<DashboardState>()(
         set((state) => {
           if (state.historyIndex <= 0) return;
           state.historyIndex--;
-          state.config = deepClone(
-            state.history[state.historyIndex]
-          );
+          state.config = deepClone(state.history[state.historyIndex]);
         }),
 
       redo: () =>
         set((state) => {
           if (state.historyIndex >= state.history.length - 1) return;
           state.historyIndex++;
-          state.config = deepClone(
-            state.history[state.historyIndex]
-          );
+          state.config = deepClone(state.history[state.historyIndex]);
         }),
 
       reset: () =>
         set((state) => {
           state.config = null;
+          state.excludeTransfers = false;
+          state.categoryOverrides = {};
           state.activeWidgetId = null;
           state.history = [];
           state.historyIndex = -1;
@@ -214,14 +209,14 @@ export const useDashboardStore = create<DashboardState>()(
         excludeTransfers: state.excludeTransfers,
         categoryOverrides: state.categoryOverrides,
       }),
-    }
-  )
+    },
+  ),
 );
 
 export const selectWidgets = (state: DashboardState): WidgetConfig[] =>
   state.config?.widgets ?? [];
 
 export const selectActiveWidget = (
-  state: DashboardState
+  state: DashboardState,
 ): WidgetConfig | null =>
   state.config?.widgets.find((w) => w.id === state.activeWidgetId) ?? null;

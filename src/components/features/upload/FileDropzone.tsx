@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Upload, FileText, AlertCircle, X, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseFile } from "@/lib/parsing/parse-file";
@@ -27,25 +27,29 @@ export function FileDropzone({
   });
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const jobRef = useRef(0);
+  useEffect(
+    () => () => {
+      jobRef.current += 1;
+    },
+    [],
+  );
 
   const reset = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    jobRef.current += 1;
     setUploadState({ status: "idle" });
   }, []);
 
   const handleFile = useCallback(
     async (file: File) => {
       reset();
+      const job = jobRef.current;
       setUploadState({ status: "validating" });
 
       const handleProgress = (progress: UploadProgress) => {
+        if (job !== jobRef.current) return;
         setUploadState({
-          status:
-            progress.stage === "analyzing"
-              ? "analyzing"
-              : "parsing",
+          status: progress.stage === "analyzing" ? "analyzing" : "parsing",
           progress,
         });
         onProgress?.(progress);
@@ -58,9 +62,11 @@ export function FileDropzone({
           maxRows,
         });
 
+        if (job !== jobRef.current) return;
         setUploadState({ status: "complete", result });
         onUploadComplete(result);
       } catch (error) {
+        if (job !== jobRef.current) return;
         const uploadError: UploadError =
           error && typeof error === "object" && "code" in error
             ? (error as UploadError)
@@ -76,7 +82,15 @@ export function FileDropzone({
         onUploadError?.(uploadError);
       }
     },
-    [onUploadComplete, onUploadError, onProgress, accept, maxSize, maxRows, reset]
+    [
+      onUploadComplete,
+      onUploadError,
+      onProgress,
+      accept,
+      maxSize,
+      maxRows,
+      reset,
+    ],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -97,16 +111,24 @@ export function FileDropzone({
       e.stopPropagation();
       setIsDragging(false);
 
-      if (disabled || uploadState.status === "parsing") return;
+      if (
+        disabled ||
+        ["validating", "parsing", "analyzing"].includes(uploadState.status)
+      )
+        return;
 
       const file = e.dataTransfer.files[0];
       if (file) handleFile(file);
     },
-    [handleFile, disabled, uploadState.status]
+    [handleFile, disabled, uploadState.status],
   );
 
   const handleClick = useCallback(() => {
-    if (disabled || uploadState.status === "parsing") return;
+    if (
+      disabled ||
+      ["validating", "parsing", "analyzing"].includes(uploadState.status)
+    )
+      return;
     inputRef.current?.click();
   }, [disabled, uploadState.status]);
 
@@ -116,7 +138,7 @@ export function FileDropzone({
       if (file) handleFile(file);
       if (inputRef.current) inputRef.current.value = "";
     },
-    [handleFile]
+    [handleFile],
   );
 
   const handleKeyDown = useCallback(
@@ -126,25 +148,28 @@ export function FileDropzone({
         handleClick();
       }
     },
-    [handleClick]
+    [handleClick],
   );
 
-  const acceptString = (accept ?? [
-    ".csv",
-    ".xlsx",
-    ".xls",
-    ".pdf",
-    "text/csv",
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-  ]).join(",");
+  const acceptString = (
+    accept ?? [
+      ".csv",
+      ".xlsx",
+      ".xls",
+      ".pdf",
+      "text/csv",
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ]
+  ).join(",");
 
   const isInteractive =
-    !disabled && uploadState.status !== "parsing";
+    !disabled &&
+    !["validating", "parsing", "analyzing"].includes(uploadState.status);
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", className)} aria-live="polite">
       <input
         ref={inputRef}
         type="file"
@@ -159,13 +184,16 @@ export function FileDropzone({
         tabIndex={isInteractive ? 0 : -1}
         aria-label="Upload file"
         aria-disabled={!isInteractive}
+        aria-busy={["validating", "parsing", "analyzing"].includes(
+          uploadState.status,
+        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         className={cn(
-          "relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 transition-all duration-200",
+          "relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 transition-all duration-200",
           isDragging && !disabled
             ? "border-primary bg-primary/5 shadow-[0_0_20px_rgba(0,0,0,0.05)]"
             : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30",
@@ -173,7 +201,7 @@ export function FileDropzone({
           uploadState.status === "complete" &&
             "border-emerald-500/50 bg-emerald-50/50 dark:border-emerald-400/30 dark:bg-emerald-950/20",
           uploadState.status === "error" &&
-            "border-destructive/50 bg-destructive/5"
+            "border-destructive/50 bg-destructive/5",
         )}
       >
         {uploadState.status === "idle" && <IdleState />}
@@ -186,10 +214,7 @@ export function FileDropzone({
           <CompleteState result={uploadState.result} onReset={reset} />
         )}
         {uploadState.status === "error" && (
-          <ErrorState
-            error={uploadState.error}
-            onRetry={reset}
-          />
+          <ErrorState error={uploadState.error} onRetry={reset} />
         )}
       </div>
     </div>
@@ -205,7 +230,8 @@ function IdleState() {
       <div className="text-center">
         <p className="text-lg font-medium">Drop your file here</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          or click to browse &middot; CSV, Excel, or PDF Bank Statement up to 50MB
+          or click to browse &middot; CSV, Excel, or PDF Bank Statement up to
+          50MB
         </p>
       </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -239,9 +265,7 @@ function ValidatingState() {
 
 function ParsingState({ progress }: { progress: UploadProgress }) {
   const label =
-    progress.stage === "analyzing"
-      ? "Analyzing columns..."
-      : "Parsing rows...";
+    progress.stage === "analyzing" ? "Analyzing columns..." : "Parsing rows...";
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
@@ -250,8 +274,7 @@ function ParsingState({ progress }: { progress: UploadProgress }) {
         <div>
           <p className="text-sm font-medium">{label}</p>
           <p className="text-xs text-muted-foreground">
-            {progress.percent}% &middot;{" "}
-            {formatBytes(progress.bytesLoaded)} /{" "}
+            {progress.percent}% &middot; {formatBytes(progress.bytesLoaded)} /{" "}
             {formatBytes(progress.bytesTotal)}
           </p>
         </div>
@@ -321,9 +344,7 @@ function ErrorState({
         <AlertCircle className="h-8 w-8 text-destructive" />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-destructive">
-          {error.message}
-        </p>
+        <p className="text-sm font-medium text-destructive">{error.message}</p>
         {error.code === "PARSE_ERROR" && (
           <p className="mt-1 text-xs text-muted-foreground">
             Check that your file is formatted correctly and try again.
