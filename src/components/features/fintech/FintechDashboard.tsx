@@ -44,6 +44,7 @@ import {
   Legend,
   Line,
 } from "recharts";
+import { getDailyCashFlowLayout } from "@/lib/charts/daily-cash-flow";
 import { Brand } from "@/components/shared/Brand";
 import { useDataStore } from "@/stores/data-store";
 import { useDashboardStore } from "@/stores/dashboard-store";
@@ -207,6 +208,8 @@ export function FintechDashboard({
   }, [analytics.enrichedTransactions, searchTerm, selectedCategory]);
 
   if (!dataset) return null;
+
+  const dailyChartLayout = getDailyCashFlowLayout(analytics.timeSeries.length);
 
   const fmt = (amt: number, compact = false) =>
     formatCurrency(amt, analytics.currency, { compact });
@@ -857,51 +860,74 @@ export function FintechDashboard({
                 <h3 className="font-semibold text-sm text-foreground border-b border-border pb-3 mb-4">
                   Daily Income vs Expenses ({analytics.currency.symbol})
                 </h3>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={analytics.timeSeries}
-                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e1e7d5" />
-                      <XAxis
-                        dataKey="date"
-                        className="text-[10px] text-muted-foreground font-sans"
-                        tickLine={false}
-                      />
-                      <YAxis
-                        className="text-[10px] text-muted-foreground font-sans"
-                        tickLine={false}
-                        tickFormatter={(v) =>
-                          `${analytics.currency.symbol}${v}`
-                        }
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#ffffff",
-                          borderColor: "#e2e8f0",
-                          borderRadius: "0.75rem",
-                          color: "#0f172a",
-                          fontSize: "11px",
-                          boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
-                        }}
-                        formatter={(val) => fmt(Number(val))}
-                      />
-                      <Legend />
-                      <Bar
-                        dataKey="income"
-                        name="Income"
-                        fill="#145c37"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="expenses"
-                        name="Expenses"
-                        fill="#a4cd59"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <p
+                  id="daily-cash-flow-help"
+                  className="text-xs text-muted-foreground mb-3"
+                >
+                  Scroll horizontally to view all {analytics.timeSeries.length}{" "}
+                  transaction days.
+                </p>
+                <div
+                  className="w-full overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  role="region"
+                  aria-label="Daily income and expenses chart"
+                  aria-describedby="daily-cash-flow-help"
+                  tabIndex={0}
+                >
+                  <div
+                    className="h-64"
+                    style={{ minWidth: dailyChartLayout.minWidth }}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={analytics.timeSeries}
+                        barGap={dailyChartLayout.barGap}
+                        barCategoryGap={dailyChartLayout.barCategoryGap}
+                        maxBarSize={dailyChartLayout.maxBarSize}
+                        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e1e7d5" />
+                        <XAxis
+                          dataKey="date"
+                          className="text-[10px] text-muted-foreground font-sans"
+                          tickLine={false}
+                        />
+                        <YAxis
+                          className="text-[10px] text-muted-foreground font-sans"
+                          tickLine={false}
+                          tickFormatter={(v) =>
+                            `${analytics.currency.symbol}${v}`
+                          }
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#ffffff",
+                            borderColor: "#e2e8f0",
+                            borderRadius: "0.75rem",
+                            color: "#0f172a",
+                            fontSize: "11px",
+                            boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(val) => fmt(Number(val))}
+                        />
+                        <Legend />
+                        <Bar
+                          isAnimationActive={false}
+                          dataKey="income"
+                          name="Income"
+                          fill="#145c37"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          isAnimationActive={false}
+                          dataKey="expenses"
+                          name="Expenses"
+                          fill="#a4cd59"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
 
